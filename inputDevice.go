@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"strings"
 	"syscall"
+	"unsafe"
 )
 
 // InputDevice is a reference to a physical device plugged into the machine
@@ -20,6 +21,8 @@ type InputEvent struct {
 	Code  uint16
 	Value int32
 }
+
+var eventSize = int(unsafe.Sizeof(InputEvent{}))
 
 func newInputDevice(buff []byte, id int) *InputDevice {
 	rd := bufio.NewReader(bytes.NewReader(buff))

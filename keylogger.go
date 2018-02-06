@@ -27,6 +27,7 @@ func GetDevices(deviceName string) []*InputDevice {
 		// TODO check if file exists first
 		buff, err := ioutil.ReadFile(fmt.Sprintf(inputPath, i))
 		if err != nil {
+			// TODO handle this error better
 			break
 		}
 		dev := newInputDevice(buff, i)
@@ -47,14 +48,11 @@ func NewKeyLogger(deviceName string) *KeyLogger {
 }
 
 // Read starts logging the input events of the devices in the KeyLogger
-func (kl *KeyLogger) Read() (chan InputEvent, error) {
-	read := make(chan InputEvent, 128)
-
+func (kl *KeyLogger) Read(fn func(InputEvent)) error {
 	for _, dev := range kl.inputDevices {
 		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
 		if err != nil {
-			close(read)
-			return read, fmt.Errorf("error opening device file: %v", err)
+			return fmt.Errorf("error opening device file: %v", err)
 		}
 
 		go func() {
@@ -63,7 +61,6 @@ func (kl *KeyLogger) Read() (chan InputEvent, error) {
 			for {
 				n, err := fd.Read(tmp)
 				if err != nil {
-					close(read)
 					panic(err) // don't think this is right here
 				}
 				if n <= 0 {
@@ -74,10 +71,10 @@ func (kl *KeyLogger) Read() (chan InputEvent, error) {
 					panic(err) // again, not right
 				}
 
-				read <- event
+				fn(event)
 			}
 		}()
 
 	}
-	return read, nil
+	return nil
 }

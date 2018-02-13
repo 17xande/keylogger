@@ -19,11 +19,6 @@ type KeyLogger struct {
 	inputDevices []*InputDevice
 }
 
-// RemoteListener implements a remote read interface
-type RemoteListener interface {
-	RemoteRead(InputEvent)
-}
-
 // GetDevices gets the desired input device, or returns all of them if no device name is sent
 func GetDevices(deviceName string) []*InputDevice {
 	var devs []*InputDevice
@@ -53,33 +48,38 @@ func NewKeyLogger(deviceName string) *KeyLogger {
 }
 
 // Read starts logging the input events of the devices in the KeyLogger
-func (kl *KeyLogger) Read(rl RemoteListener) error {
+func (kl *KeyLogger) Read() (chan InputEvent, error) {
+	c := make(chan InputEvent, 128)
+
 	for _, dev := range kl.inputDevices {
 		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
 		if err != nil {
-			return fmt.Errorf("error opening device file: %v", err)
+			return nil, fmt.Errorf("error opening device file: %v", err)
 		}
 
-		go func() {
-			tmp := make([]byte, eventSize)
-			event := InputEvent{}
-			for {
-				n, err := fd.Read(tmp)
-				if err != nil {
-					panic(err) // don't think this is right here
-				}
-				if n <= 0 {
-					continue
-				}
-
-				if err := binary.Read(bytes.NewBuffer(tmp), binary.LittleEndian, &event); err != nil {
-					panic(err) // again, not right
-				}
-
-				rl.RemoteRead(event)
-			}
-		}()
+		go processEvents(fd, c)
 
 	}
-	return nil
+	return c, nil
+}
+
+func processEvents(fd *os.File, c chan InputEvent) {
+	tmp := make([]byte, eventSize)
+	event := InputEvent{}
+	for {
+		n, err := fd.Read(tmp)
+		if err != nil {
+			close(c)
+			panic(err) // don't think this is right here
+		}
+		if n <= 0 {
+			continue
+		}
+
+		if err := binary.Read(bytes.NewBuffer(tmp), binary.LittleEndian, &event); err != nil {
+			panic(err) // again, not right
+		}
+
+		c <- event
+	}
 }

@@ -48,19 +48,20 @@ func NewKeyLogger(deviceName string) *KeyLogger {
 }
 
 // Read starts logging the input events of the devices in the KeyLogger
-func (kl *KeyLogger) Read() (chan InputEvent, error) {
-	c := make(chan InputEvent, 128)
+func (kl *KeyLogger) Read() ([]chan InputEvent, error) {
+	chans := make([]chan InputEvent, len(kl.inputDevices))
 
 	for _, dev := range kl.inputDevices {
+		c := make(chan InputEvent, 128)
 		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
 		if err != nil {
 			return nil, fmt.Errorf("error opening device file: %v", err)
 		}
 
 		go processEvents(fd, c)
-
+		chans = append(chans, c)
 	}
-	return c, nil
+	return chans, nil
 }
 
 func processEvents(fd *os.File, c chan InputEvent) {

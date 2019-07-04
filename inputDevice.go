@@ -1,9 +1,6 @@
 package keylogger
 
 import (
-	"bufio"
-	"bytes"
-	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -25,14 +22,11 @@ type InputEvent struct {
 var eventSize = int(unsafe.Sizeof(InputEvent{}))
 
 func newInputDevice(buff []byte, id int) *InputDevice {
-	rd := bufio.NewReader(bytes.NewReader(buff))
-	rd.ReadLine()              // TODO not sure why we have to read one line first?
-	dev, _, _ := rd.ReadLine() // TODO not sure why we're ignoring things?
-	splt := strings.Split(string(dev), "=")
+	name := string(buff)
 
 	return &InputDevice{
 		ID:   id,
-		Name: splt[1],
+		Name: name,
 	}
 }
 

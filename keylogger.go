@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 const (
-	inputPath  = "/sys/class/input/event%d/device/uevent"
+	inputPath  = "/sys/class/input/event%d/device/name"
 	deviceFile = "/dev/input/event%d"
 )
 
@@ -22,6 +23,7 @@ type KeyLogger struct {
 // GetDevices gets the desired input device, or returns all of them if no device name is sent
 func GetDevices(deviceName string) []*InputDevice {
 	var devs []*InputDevice
+	deviceName = strings.ToLower(deviceName)
 
 	for i := 0; i < 255; i++ {
 		// TODO check if file exists first
@@ -31,7 +33,14 @@ func GetDevices(deviceName string) []*InputDevice {
 			break
 		}
 		dev := newInputDevice(buff, i)
-		if deviceName == "" || deviceName != "" && deviceName == dev.Name {
+
+		if deviceName == "" {
+			devs = append(devs, dev)
+			continue
+		}
+
+		contains := strings.Contains(strings.ToLower(string(buff)), deviceName)
+		if deviceName == dev.Name || contains {
 			devs = append(devs, dev)
 		}
 	}

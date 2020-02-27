@@ -15,13 +15,26 @@ const (
 	deviceFile = "/dev/input/event%d"
 )
 
-// KeyLogger keeps a reference to the InputDevice that it's listening to
+// KeyLogger keeps a reference to the InputDevices that it's listening to.
 type KeyLogger struct {
 	inputDevices []*InputDevice
 }
 
-// GetDevices gets the desired input device, or returns all of them if no device name is sent
-func GetDevices(deviceName string) []*InputDevice {
+// NewKeyLogger creates a new keylogger for a device, based on it's name.
+func NewKeyLogger(deviceName string) *KeyLogger {
+	devs := ScanDevices(deviceName)
+	return &KeyLogger{
+		inputDevices: devs,
+	}
+}
+
+// GetDevices returns the devices that have been found
+func (kl *KeyLogger) GetDevices() []*InputDevice {
+	return kl.inputDevices
+}
+
+// ScanDevices gets the desired input device, or returns all of them if no device name is sent.
+func ScanDevices(deviceName string) []*InputDevice {
 	var devs []*InputDevice
 	deviceName = strings.ToLower(deviceName)
 
@@ -48,25 +61,47 @@ func GetDevices(deviceName string) []*InputDevice {
 	return devs
 }
 
-// NewKeyLogger creates a new keylogger for a device, based on it's name
-func NewKeyLogger(deviceName string) *KeyLogger {
-	devs := GetDevices(deviceName)
-	return &KeyLogger{
-		inputDevices: devs,
+// ReadDevice reads a device and returns what was read or an error.
+func ReadDevice(d InputDevice) (e InputEvent, err error) {
+	// If this device's file isn't open for reading yet, open it.
+	if d.File == nil {
+		d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
+		if err != nil {
+			d.File = nil
+			return
+		}
 	}
+
+	b := make([]byte, eventSize)
+
+	n, err := d.File.Read(b)
+	if err != nil {
+		d.File.Close()
+		return e, err
+	}
+
+	if n <= 0 {
+		return e, nil
+	}
+
+	if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
+		d.File.Close()
+		return e, err
+	}
+
+	return
 }
 
-// Read starts logging the input events of the devices in the KeyLogger
+// Read the devices' input events and send them on their respective channels.
 func (kl *KeyLogger) Read() ([]chan InputEvent, error) {
 	chans := make([]chan InputEvent, len(kl.inputDevices))
 
 	for _, dev := range kl.inputDevices {
-		c := make(chan InputEvent, 128)
 		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
 		if err != nil {
 			return nil, fmt.Errorf("error opening device file: %v", err)
 		}
-
+		c := make(chan InputEvent)
 		go processEvents(fd, c)
 		chans = append(chans, c)
 	}
@@ -80,6 +115,7 @@ func processEvents(fd *os.File, c chan InputEvent) {
 		n, err := fd.Read(tmp)
 		if err != nil {
 			close(c)
+			fd.Close()
 			panic(err) // don't think this is right here
 		}
 		if n <= 0 {

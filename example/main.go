@@ -29,7 +29,7 @@ func main() {
 
 func listenLoop(ctx context.Context) {
 	for {
-		if err := Listen(ctx, "keyboard"); err != nil {
+		if err := Listen(ctx, "logitech"); err != nil {
 			fmt.Println("error listening to device:", err)
 			time.Sleep(1 * time.Second)
 		}

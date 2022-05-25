@@ -41,8 +41,12 @@ func ScanDevices(deviceName string) []*InputDevice {
 	for i := 0; i < 255; i++ {
 		// TODO check if file exists first
 		buff, err := ioutil.ReadFile(fmt.Sprintf(inputPath, i))
+		if err == os.ErrNotExist {
+			// File doesn't exist, unlikely to be more input devices after this.
+			break
+		}
 		if err != nil {
-			// TODO handle this error better
+			fmt.Printf("can't read input device file: %v", err)
 			break
 		}
 		dev := newInputDevice(buff, i)
@@ -52,7 +56,7 @@ func ScanDevices(deviceName string) []*InputDevice {
 			continue
 		}
 
-		contains := strings.Contains(strings.ToLower(string(buff)), deviceName)
+		contains := strings.Contains(strings.ToLower(dev.Name), deviceName)
 		if deviceName == dev.Name || contains {
 			devs = append(devs, dev)
 		}

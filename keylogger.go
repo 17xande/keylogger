@@ -72,7 +72,7 @@ func ReadDevice(d InputDevice) (e InputEvent, err error) {
 		d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
 		if err != nil {
 			d.File = nil
-			return
+			return e, fmt.Errorf("can't open device file: %w", err)
 		}
 	}
 
@@ -81,7 +81,7 @@ func ReadDevice(d InputDevice) (e InputEvent, err error) {
 	n, err := d.File.Read(b)
 	if err != nil {
 		d.File.Close()
-		return e, err
+		return e, fmt.Errorf("can't read device file: %w", err)
 	}
 
 	if n <= 0 {
@@ -90,7 +90,7 @@ func ReadDevice(d InputDevice) (e InputEvent, err error) {
 
 	if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
 		d.File.Close()
-		return e, err
+		return e, fmt.Errorf("can't read device file again? %w", err)
 	}
 
 	return
@@ -103,7 +103,7 @@ func (kl *KeyLogger) Read() ([]chan InputEvent, error) {
 	for _, dev := range kl.inputDevices {
 		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
 		if err != nil {
-			return nil, fmt.Errorf("error opening device file: %v", err)
+			return nil, fmt.Errorf("error opening device file: %w", err)
 		}
 		c := make(chan InputEvent)
 		go processEvents(fd, c)

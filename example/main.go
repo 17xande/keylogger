@@ -7,14 +7,21 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"text/tabwriter"
 	"time"
 
 	"github.com/17xande/keylogger"
 )
 
 func main() {
+	l := flag.Bool("list", false, "list devices connected to system")
 	device := flag.String("device", "keyboard", "device name to listen to")
 	flag.Parse()
+
+	if *l {
+		list()
+		return
+	}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -29,6 +36,16 @@ func main() {
 
 	<-c
 	cancel()
+}
+
+func list() {
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+	fmt.Fprintf(w, "Id\tName\t\n")
+	ds := keylogger.ScanDevices("")
+	for i, d := range ds {
+		fmt.Fprintf(w, "%d\t%s\n", i, d.Name)
+	}
+	w.Flush()
 }
 
 func listenLoop(ctx context.Context, device string) {

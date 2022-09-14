@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,6 +13,9 @@ import (
 )
 
 func main() {
+	device := flag.String("device", "keyboard", "device name to listen to")
+	flag.Parse()
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -20,16 +24,16 @@ func main() {
 		close(c)
 	}()
 
-	go listenLoop(ctx)
+	go listenLoop(ctx, *device)
 	fmt.Println("listening: ")
 
 	<-c
 	cancel()
 }
 
-func listenLoop(ctx context.Context) {
+func listenLoop(ctx context.Context, device string) {
 	for {
-		if err := Listen(ctx, "logitech"); err != nil {
+		if err := Listen(ctx, device); err != nil {
 			fmt.Println("error listening to device:", err)
 			time.Sleep(1 * time.Second)
 		}
@@ -46,6 +50,10 @@ func Listen(ctx context.Context, dev string) error {
 	ds := keylogger.ScanDevices(dev)
 	if len(ds) <= 0 {
 		return fmt.Errorf("device '%s' not found", dev)
+	}
+
+	for _, d := range ds {
+		fmt.Printf("Listening to device %s\n", d.Name)
 	}
 
 	cie := make(chan keylogger.InputEvent)

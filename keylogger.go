@@ -4,8 +4,9 @@ package keylogger
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"strings"
 )
@@ -37,16 +38,22 @@ func (kl *KeyLogger) GetDevices() []*InputDevice {
 func ScanDevices(deviceName string) []*InputDevice {
 	var devs []*InputDevice
 	deviceName = strings.ToLower(deviceName)
+	retrycount := 0
 
 	for i := 0; i < 255; i++ {
 		// TODO check if file exists first
-		buff, err := ioutil.ReadFile(fmt.Sprintf(inputPath, i))
-		if err == os.ErrNotExist {
-			// File doesn't exist, unlikely to be more input devices after this.
-			break
+		buff, err := os.ReadFile(fmt.Sprintf(inputPath, i))
+		if errors.Is(err, fs.ErrNotExist) {
+			// File doesn't exist, there could be other files/devices further up, increase the retry count.
+			retrycount++
+			if retrycount > 5 {
+				// We've retried 5 times, there probably aren't any other devices connected.
+				break
+			}
+			continue
 		}
 		if err != nil {
-			fmt.Printf("can't read input device file: %v", err)
+			fmt.Printf("can't read input device file: %v\n", err)
 			break
 		}
 		dev := newInputDevice(buff, i)

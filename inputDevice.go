@@ -47,6 +47,7 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 
 	defer func() {
 		d.File.Close()
+		// TODO: close channels?
 	}()
 
 	// TODO: Check if file exists first?
@@ -60,29 +61,29 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 	e := InputEvent{}
 
 	for {
-		n, err := d.File.Read(b)
-		// Check if the goroutine needs to be cancelled.
 		select {
+		// Check if the goroutine needs to be cancelled.
 		case <-ctx.Done():
 			return
+
 		default:
-		}
+			n, err := d.File.Read(b)
+			if err != nil {
+				cer <- err
+				return
+			}
 
-		if err != nil {
-			cer <- err
-			return
-		}
+			if n <= 0 {
+				continue
+			}
 
-		if n <= 0 {
-			continue
-		}
+			if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
+				cer <- err
+				return
+			}
 
-		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
-			cer <- err
-			return
+			cie <- e
 		}
-
-		cie <- e
 	}
 }
 

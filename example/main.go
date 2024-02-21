@@ -41,8 +41,8 @@ func main() {
 func list() {
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 	fmt.Fprintf(w, "Id\tName\t\n")
-	ds := keylogger.ScanDevices("")
-	for i, d := range ds {
+	kl := keylogger.NewKeyLogger("")
+	for i, d := range kl.GetDevices() {
 		fmt.Fprintf(w, "%d\t%s\n", i, d.Name)
 	}
 	w.Flush()
@@ -64,12 +64,12 @@ func Listen(ctx context.Context, dev string) error {
 	var err error
 	var open bool
 
-	ds := keylogger.ScanDevices(dev)
-	if len(ds) <= 0 {
+	kl := keylogger.NewKeyLogger(dev)
+	if len(kl.GetDevices()) <= 0 {
 		return fmt.Errorf("device '%s' not found", dev)
 	}
 
-	for _, d := range ds {
+	for _, d := range kl.GetDevices() {
 		fmt.Printf("Listening to device %s\n", d.Name)
 	}
 
@@ -84,7 +84,7 @@ func Listen(ctx context.Context, dev string) error {
 		close(cer)
 	}()
 
-	for _, d := range ds {
+	for _, d := range kl.GetDevices() {
 		go d.Read(c, cie, cer)
 	}
 

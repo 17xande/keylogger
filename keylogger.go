@@ -21,9 +21,9 @@ type KeyLogger struct {
 	inputDevices []*InputDevice
 }
 
-// NewKeyLogger creates a new keylogger for a device, based on it's name.
+// NewKeyLogger creates a new keylogger for a set of devices, based on their name.
 func NewKeyLogger(deviceName string) *KeyLogger {
-	devs := ScanDevices(deviceName)
+	devs := scanDevices(deviceName)
 	return &KeyLogger{
 		inputDevices: devs,
 	}
@@ -34,20 +34,19 @@ func (kl *KeyLogger) GetDevices() []*InputDevice {
 	return kl.inputDevices
 }
 
-// ScanDevices gets the desired input device, or returns all of them if no device name is sent.
-func ScanDevices(deviceName string) []*InputDevice {
+// scanDevices gets the desired input device, or returns all of them if no device name is sent.
+func scanDevices(deviceName string) []*InputDevice {
 	var devs []*InputDevice
 	deviceName = strings.ToLower(deviceName)
 	retrycount := 0
 
 	for i := 0; i < 255; i++ {
-		// TODO check if file exists first
 		buff, err := os.ReadFile(fmt.Sprintf(inputPath, i))
 		if errors.Is(err, fs.ErrNotExist) {
 			// File doesn't exist, there could be other files/devices further up, increase the retry count.
 			retrycount++
-			if retrycount > 5 {
-				// We've retried 5 times, there probably aren't any other devices connected.
+			if retrycount > 15 {
+				// We've retried 15 times, there probably aren't any other devices connected.
 				break
 			}
 			continue

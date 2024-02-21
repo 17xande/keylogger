@@ -3,12 +3,15 @@ package keylogger
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"strings"
+
+	"github.com/17xande/keylogger"
 )
 
 const (
@@ -72,39 +75,20 @@ func scanDevices(deviceName string) []*InputDevice {
 }
 
 // Read the devices' input events and send them on their respective channels.
-func (kl *KeyLogger) Read() ([]chan InputEvent, error) {
-	chans := make([]chan InputEvent, len(kl.inputDevices))
+func (kl *KeyLogger) Read(ctx context.Context) (chan InputEvent, chan error) {
+	cie := make(chan keylogger.InputEvent)
+	cer := make(chan error)
+	c, cancel := context.WithCancel(ctx)
 
-	for _, dev := range kl.inputDevices {
-		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
-		if err != nil {
-			return nil, fmt.Errorf("error opening device file: %w", err)
-		}
-		c := make(chan InputEvent)
-		go processEvents(fd, c)
-		chans = append(chans, c)
+	defer func() {
+		cancel()
+		close(cie)
+		close(cer)
+	}()
+
+	for _, d := range kl.GetDevices() {
+		go d.Read(c, cie, cer)
 	}
-	return chans, nil
-}
 
-func processEvents(fd *os.File, c chan InputEvent) {
-	tmp := make([]byte, eventSize)
-	event := InputEvent{}
-	for {
-		n, err := fd.Read(tmp)
-		if err != nil {
-			close(c)
-			fd.Close()
-			panic(err) // don't think this is right here
-		}
-		if n <= 0 {
-			continue
-		}
-
-		if err := binary.Read(bytes.NewBuffer(tmp), binary.LittleEndian, &event); err != nil {
-			panic(err) // again, not right
-		}
-
-		c <- event
-	}
+	return cie, cer
 }

@@ -71,37 +71,6 @@ func scanDevices(deviceName string) []*InputDevice {
 	return devs
 }
 
-// ReadDevice reads a device and returns what was read or an error.
-func ReadDevice(d InputDevice) (e InputEvent, err error) {
-	// If this device's file isn't open for reading yet, open it.
-	if d.File == nil {
-		d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
-		if err != nil {
-			d.File = nil
-			return e, fmt.Errorf("can't open device file: %w", err)
-		}
-	}
-
-	b := make([]byte, eventSize)
-
-	n, err := d.File.Read(b)
-	if err != nil {
-		d.File.Close()
-		return e, fmt.Errorf("can't read device file: %w", err)
-	}
-
-	if n <= 0 {
-		return e, nil
-	}
-
-	if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
-		d.File.Close()
-		return e, fmt.Errorf("can't read device file again? %w", err)
-	}
-
-	return
-}
-
 // Read the devices' input events and send them on their respective channels.
 func (kl *KeyLogger) Read() ([]chan InputEvent, error) {
 	chans := make([]chan InputEvent, len(kl.inputDevices))

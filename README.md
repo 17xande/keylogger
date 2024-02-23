@@ -2,14 +2,18 @@
 
 ### **0 Dependency** Library to capture events from **multiple** global input devices on Linux systems.
 
-_Heavily based on [MarinX's](https://github.com/MarinX) [keylogger](https://github.com/MarinX/keylogger)._
+_Based on [MarinX's](https://github.com/MarinX) [keylogger](https://github.com/MarinX/keylogger)._
 
-### Why not just use [MarinX's](https://github.com/MarinX) [keylogger](https://github.com/MarinX/keylogger)?
-Some devices, like keyboards, show up as multiple devices on Linux. To be able to listen to all key events, this version of `keyloger` listens to all devices that match a provided substring using multiple goroutines.
+### With added features:
+- Log/Listen to multiple devices simultaneously.
+- Added support for media keys as well as other keys.
+- Use a map for key lookup internally, for simplicity.
 
 ## Example
 
 ```go
+import "github.com/17xande/keylogger"
+
 func main() {
 	device := flag.String("device", "keyboard", "device name to listen to")
 	flag.Parse()
@@ -41,7 +45,7 @@ func listenLoop(ctx context.Context, device string) {
 	}
 }
 
-// Listen to all the Input Devices supplied.
+// Listen to all the Input Devices supplied. This blocks while listening.
 // Return an error if there is a problem, or if one of the devices disconnects.
 func Listen(ctx context.Context, dev string) error {
 	var e keylogger.InputEvent
@@ -64,21 +68,24 @@ func Listen(ctx context.Context, dev string) error {
 	defer func() {
 		// Cancel all the goroutines reading the device files.
 		cancel()
+		// Close opened channels.
 		close(cie)
 		close(cer)
 	}()
 
-	for _, d := range ds {
-		go d.Read(c, cie, cer)
-	}
+	// Star reading each found device.
+	kl.Read(c, cie, cer)
 
 	for {
 		select {
+		// Listen for device events.
 		case e, open = <-cie:
 			if !open {
 				return errors.New("event channel closed")
 			}
+			// Handle device event.
 			fmt.Printf("%2x\t%s\n", e.Type, e.KeyString())
+		// Listen for reading errors.
 		case err, open = <-cer:
 			if !open {
 				return errors.New("error channel closed")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"strings"
 	"syscall"
@@ -49,18 +50,24 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 	var err error
 
 	defer func() {
-		if err := d.File.Close(); err != nil {
-			cer <- fmt.Errorf("can't close file while breaking out of Read loop: %w", err)
-		} // TODO: close channels? No, you close the channels where you opened them.
+		err := d.File.Close()
+		if errors.Is(err, fs.ErrClosed) {
+			// File already closed, safe to ignore.
+			return
+		}
+		if err != nil {
+			// Can't send error on channel because it will already be closed.
+			log.Printf("failed to close device file while breaking out of Read loop: %v", err)
+		}
 	}()
 
 	d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
 	if errors.Is(err, fs.ErrNotExist) {
-		cer <- fmt.Errorf("can't open device file, it does not exist")
+		cer <- fmt.Errorf("failed to open device file, it does not exist")
 		return
 	}
 	if err != nil {
-		cer <- fmt.Errorf("failed to open file for reading: %w", err)
+		cer <- fmt.Errorf("failed to open device file for reading: %w", err)
 		return
 	}
 
@@ -80,16 +87,16 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 				return
 			}
 			if errors.Is(err, fs.ErrNotExist) {
-				cer <- fmt.Errorf("can't read device file because it doesn't exist")
+				cer <- fmt.Errorf("failed to read device file because it doesn't exist")
 				return
 			}
 			if err != nil {
-				cer <- fmt.Errorf("can't read device file: %w", err)
+				cer <- fmt.Errorf("failed to read device file: %w", err)
 				return
 			}
 
 			if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
-				cer <- fmt.Errorf("can't read binary in device file: %w", err)
+				cer <- fmt.Errorf("failed reading binary in device file: %w", err)
 				return
 			}
 

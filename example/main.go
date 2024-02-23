@@ -84,9 +84,7 @@ func Listen(ctx context.Context, dev string) error {
 		close(cer)
 	}()
 
-	for _, d := range kl.GetDevices() {
-		go d.Read(c, cie, cer)
-	}
+	kl.Read(c, cie, cer)
 
 	for {
 		select {

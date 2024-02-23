@@ -2,16 +2,12 @@
 package keylogger
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"strings"
-
-	"github.com/17xande/keylogger"
 )
 
 const (
@@ -75,20 +71,8 @@ func scanDevices(deviceName string) []*InputDevice {
 }
 
 // Read the devices' input events and send them on their respective channels.
-func (kl *KeyLogger) Read(ctx context.Context) (chan InputEvent, chan error) {
-	cie := make(chan keylogger.InputEvent)
-	cer := make(chan error)
-	c, cancel := context.WithCancel(ctx)
-
-	defer func() {
-		cancel()
-		close(cie)
-		close(cer)
-	}()
-
+func (kl *KeyLogger) Read(ctx context.Context, cie chan InputEvent, cer chan error) {
 	for _, d := range kl.GetDevices() {
-		go d.Read(c, cie, cer)
+		go d.Read(ctx, cie, cer)
 	}
-
-	return cie, cer
 }

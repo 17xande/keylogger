@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -46,7 +46,7 @@ func (ie InputEvent) KeyString() string {
 }
 
 // Read the device file and send InputEvents on a channel.
-func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan error) {
+func (d *InputDevice) Read(ctx context.Context, wg *sync.WaitGroup, cie chan InputEvent, cer chan error) {
 	var err error
 
 	defer func() {
@@ -56,9 +56,10 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 			return
 		}
 		if err != nil {
-			// Can't send error on channel because it will already be closed.
-			log.Printf("failed to close device file while breaking out of Read loop: %v", err)
+			cer <- fmt.Errorf("failed to close device file while breaking out of Read loop: %w", err)
 		}
+
+		wg.Done()
 	}()
 
 	d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
@@ -99,7 +100,6 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 				cer <- fmt.Errorf("failed reading binary in device file: %w", err)
 				return
 			}
-
 			cie <- e
 		}
 	}

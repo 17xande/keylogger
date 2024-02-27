@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync"
 )
 
 const (
@@ -71,8 +72,14 @@ func scanDevices(deviceName string) []*InputDevice {
 }
 
 // Read the devices' input events and send them on their respective channels.
-func (kl *KeyLogger) Read(ctx context.Context, cie chan InputEvent, cer chan error) {
+func (kl *KeyLogger) Read(ctx context.Context, cwait chan struct{}, cie chan InputEvent, cer chan error) {
+	wg := new(sync.WaitGroup)
+
 	for _, d := range kl.GetDevices() {
-		go d.Read(ctx, cie, cer)
+		wg.Add(1)
+		go d.Read(ctx, wg, cie, cer)
 	}
+
+	wg.Wait()
+	cwait <- struct{}{}
 }

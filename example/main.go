@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -17,8 +18,10 @@ var neverReady = make(chan struct{}) // never closed
 
 func main() {
 	l := flag.Bool("list", false, "list devices connected to system")
-	device := flag.String("device", "keyboard", "device name to listen to")
+	fDevices := flag.String("devices", "", "enter a comma-separated list of devices")
 	flag.Parse()
+
+	devices := strings.Split(*fDevices, ",")
 
 	if *l {
 		list()
@@ -30,7 +33,7 @@ func main() {
 		stop()
 	}()
 
-	go listenLoop(ctx, *device)
+	go listenLoop(ctx, devices)
 	fmt.Println("listening: ")
 
 	select {
@@ -45,16 +48,16 @@ func main() {
 func list() {
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 	fmt.Fprintf(w, "Id\tName\t\n")
-	kl := keylogger.NewKeyLogger("")
+	kl := keylogger.NewKeyLogger([]string{})
 	for i, d := range kl.GetDevices() {
 		fmt.Fprintf(w, "%d\t%s\n", i, d.Name)
 	}
 	w.Flush()
 }
 
-func listenLoop(ctx context.Context, device string) {
+func listenLoop(ctx context.Context, devices []string) {
 	for {
-		if err := Listen(ctx, device); err != nil {
+		if err := Listen(ctx, devices); err != nil {
 			fmt.Println("error listening to device:", err)
 			time.Sleep(1 * time.Second)
 		}
@@ -63,15 +66,15 @@ func listenLoop(ctx context.Context, device string) {
 
 // Listen to all the Input Devices supplied.
 // Return an error if there is a problem, or if one of the devices disconnects.
-func Listen(ctx context.Context, dev string) []error {
+func Listen(ctx context.Context, devs []string) []error {
 	var e keylogger.InputEvent
 	var err error
 	var open bool
 	errs := make([]error, 3)
 
-	kl := keylogger.NewKeyLogger(dev)
+	kl := keylogger.NewKeyLogger(devs)
 	if len(kl.GetDevices()) <= 0 {
-		return []error{fmt.Errorf("device '%s' not found", dev)}
+		return []error{fmt.Errorf("device '%s' not found", devs)}
 	}
 
 	for _, d := range kl.GetDevices() {

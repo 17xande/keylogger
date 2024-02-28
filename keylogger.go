@@ -22,8 +22,8 @@ type KeyLogger struct {
 }
 
 // NewKeyLogger creates a new keylogger for a set of devices, based on their name.
-func NewKeyLogger(deviceName string) *KeyLogger {
-	devs := scanDevices(deviceName)
+func NewKeyLogger(deviceNames []string) *KeyLogger {
+	devs := scanDevices(deviceNames)
 	return &KeyLogger{
 		inputDevices: devs,
 	}
@@ -35,9 +35,8 @@ func (kl *KeyLogger) GetDevices() []*InputDevice {
 }
 
 // scanDevices gets the desired input device, or returns all of them if no device name is sent.
-func scanDevices(deviceName string) []*InputDevice {
+func scanDevices(deviceNames []string) []*InputDevice {
 	var devs []*InputDevice
-	deviceName = strings.ToLower(deviceName)
 	retrycount := 0
 
 	for i := 0; i < 255; i++ {
@@ -57,15 +56,19 @@ func scanDevices(deviceName string) []*InputDevice {
 		}
 		dev := newInputDevice(buff, i)
 
-		if deviceName == "" {
+		if len(deviceNames) == 0 {
 			devs = append(devs, dev)
 			continue
 		}
 
-		contains := strings.Contains(strings.ToLower(dev.Name), deviceName)
-		if deviceName == dev.Name || contains {
-			devs = append(devs, dev)
+		for _, deviceName := range deviceNames {
+			deviceName = strings.ToLower(deviceName)
+			contains := strings.Contains(strings.ToLower(dev.Name), deviceName)
+			if deviceName == dev.Name || contains {
+				devs = append(devs, dev)
+			}
 		}
+
 	}
 
 	return devs

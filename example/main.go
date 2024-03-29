@@ -7,50 +7,57 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/17xande/keylogger"
 )
 
+var neverReady = make(chan struct{}) // never closed
+
 func main() {
 	l := flag.Bool("list", false, "list devices connected to system")
-	device := flag.String("device", "keyboard", "device name to listen to")
+	fDevices := flag.String("devices", "", "enter a comma-separated list of devices")
 	flag.Parse()
+
+	devices := strings.Split(*fDevices, ",")
 
 	if *l {
 		list()
 		return
 	}
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer func() {
-		cancel()
-		close(c)
+		stop()
 	}()
 
-	go listenLoop(ctx, *device)
+	go listenLoop(ctx, devices)
 	fmt.Println("listening: ")
 
-	<-c
-	cancel()
+	select {
+	case <-neverReady:
+		fmt.Println("ready")
+	case <-ctx.Done():
+		fmt.Println(ctx.Err()) // prints "context canceled"
+		stop()                 // stop receiving signal notifications as soon as possible.
+	}
 }
 
 func list() {
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 	fmt.Fprintf(w, "Id\tName\t\n")
-	ds := keylogger.ScanDevices("")
-	for i, d := range ds {
+	kl := keylogger.NewKeyLogger([]string{})
+	for i, d := range kl.GetDevices() {
 		fmt.Fprintf(w, "%d\t%s\n", i, d.Name)
 	}
 	w.Flush()
 }
 
-func listenLoop(ctx context.Context, device string) {
+func listenLoop(ctx context.Context, devices []string) {
 	for {
-		if err := Listen(ctx, device); err != nil {
+		if err := Listen(ctx, devices); err != nil {
 			fmt.Println("error listening to device:", err)
 			time.Sleep(1 * time.Second)
 		}
@@ -59,47 +66,47 @@ func listenLoop(ctx context.Context, device string) {
 
 // Listen to all the Input Devices supplied.
 // Return an error if there is a problem, or if one of the devices disconnects.
-func Listen(ctx context.Context, dev string) error {
+func Listen(ctx context.Context, devs []string) []error {
 	var e keylogger.InputEvent
 	var err error
 	var open bool
+	errs := make([]error, 3)
 
-	ds := keylogger.ScanDevices(dev)
-	if len(ds) <= 0 {
-		return fmt.Errorf("device '%s' not found", dev)
+	kl := keylogger.NewKeyLogger(devs)
+	if len(kl.GetDevices()) <= 0 {
+		return []error{fmt.Errorf("device '%s' not found", devs)}
 	}
 
-	for _, d := range ds {
+	for _, d := range kl.GetDevices() {
 		fmt.Printf("Listening to device %s\n", d.Name)
 	}
 
 	cie := make(chan keylogger.InputEvent)
 	cer := make(chan error)
-	c, cancel := context.WithCancel(ctx)
+	cwait := make(chan struct{})
 
-	defer func() {
-		// Cancel all the goroutines reading the device files.
-		cancel()
-		close(cie)
-		close(cer)
-	}()
-
-	for _, d := range ds {
-		go d.Read(c, cie, cer)
-	}
+	go kl.Read(ctx, cwait, cie, cer)
 
 	for {
 		select {
+		// Wait for all goroutines to finish, otherwise they'll get stuck trying
+		// to write to a channel without a listener.
+		case <-cwait:
+			// All goroutines have returned. Safe to break out.
+			return errs
 		case e, open = <-cie:
 			if !open {
-				return errors.New("event channel closed")
+				errs = append(errs, errors.New("event channel closed"))
 			}
+
+			// Handle key input here.
 			fmt.Printf("%2x\t%s\n", e.Type, e.KeyString())
+
 		case err, open = <-cer:
 			if !open {
-				return errors.New("error channel closed")
+				errs = append(errs, errors.New("error channel closed"))
 			}
-			return err
+			errs = append(errs, err)
 		}
 	}
 }

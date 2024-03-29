@@ -2,13 +2,13 @@
 package keylogger
 
 import (
-	"bytes"
-	"encoding/binary"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"strings"
+	"sync"
 )
 
 const (
@@ -21,9 +21,9 @@ type KeyLogger struct {
 	inputDevices []*InputDevice
 }
 
-// NewKeyLogger creates a new keylogger for a device, based on it's name.
-func NewKeyLogger(deviceName string) *KeyLogger {
-	devs := ScanDevices(deviceName)
+// NewKeyLogger creates a new keylogger for a set of devices, based on their name.
+func NewKeyLogger(deviceNames []string) *KeyLogger {
+	devs := scanDevices(deviceNames)
 	return &KeyLogger{
 		inputDevices: devs,
 	}
@@ -34,20 +34,18 @@ func (kl *KeyLogger) GetDevices() []*InputDevice {
 	return kl.inputDevices
 }
 
-// ScanDevices gets the desired input device, or returns all of them if no device name is sent.
-func ScanDevices(deviceName string) []*InputDevice {
+// scanDevices gets the desired input device, or returns all of them if no device name is sent.
+func scanDevices(deviceNames []string) []*InputDevice {
 	var devs []*InputDevice
-	deviceName = strings.ToLower(deviceName)
 	retrycount := 0
 
 	for i := 0; i < 255; i++ {
-		// TODO check if file exists first
 		buff, err := os.ReadFile(fmt.Sprintf(inputPath, i))
 		if errors.Is(err, fs.ErrNotExist) {
 			// File doesn't exist, there could be other files/devices further up, increase the retry count.
 			retrycount++
-			if retrycount > 5 {
-				// We've retried 5 times, there probably aren't any other devices connected.
+			if retrycount > 15 {
+				// We've retried 15 times, there probably aren't any other devices connected.
 				break
 			}
 			continue
@@ -58,85 +56,33 @@ func ScanDevices(deviceName string) []*InputDevice {
 		}
 		dev := newInputDevice(buff, i)
 
-		if deviceName == "" {
+		if len(deviceNames) == 0 {
 			devs = append(devs, dev)
 			continue
 		}
 
-		contains := strings.Contains(strings.ToLower(dev.Name), deviceName)
-		if deviceName == dev.Name || contains {
-			devs = append(devs, dev)
+		for _, deviceName := range deviceNames {
+			deviceName = strings.ToLower(deviceName)
+			contains := strings.Contains(strings.ToLower(dev.Name), deviceName)
+			if deviceName == dev.Name || contains {
+				devs = append(devs, dev)
+			}
 		}
+
 	}
 
 	return devs
 }
 
-// ReadDevice reads a device and returns what was read or an error.
-func ReadDevice(d InputDevice) (e InputEvent, err error) {
-	// If this device's file isn't open for reading yet, open it.
-	if d.File == nil {
-		d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
-		if err != nil {
-			d.File = nil
-			return e, fmt.Errorf("can't open device file: %w", err)
-		}
-	}
-
-	b := make([]byte, eventSize)
-
-	n, err := d.File.Read(b)
-	if err != nil {
-		d.File.Close()
-		return e, fmt.Errorf("can't read device file: %w", err)
-	}
-
-	if n <= 0 {
-		return e, nil
-	}
-
-	if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
-		d.File.Close()
-		return e, fmt.Errorf("can't read device file again? %w", err)
-	}
-
-	return
-}
-
 // Read the devices' input events and send them on their respective channels.
-func (kl *KeyLogger) Read() ([]chan InputEvent, error) {
-	chans := make([]chan InputEvent, len(kl.inputDevices))
+func (kl *KeyLogger) Read(ctx context.Context, cwait chan struct{}, cie chan InputEvent, cer chan error) {
+	wg := new(sync.WaitGroup)
 
-	for _, dev := range kl.inputDevices {
-		fd, err := os.Open(fmt.Sprintf(deviceFile, dev.ID))
-		if err != nil {
-			return nil, fmt.Errorf("error opening device file: %w", err)
-		}
-		c := make(chan InputEvent)
-		go processEvents(fd, c)
-		chans = append(chans, c)
+	for _, d := range kl.GetDevices() {
+		wg.Add(1)
+		go d.Read(ctx, wg, cie, cer)
 	}
-	return chans, nil
-}
 
-func processEvents(fd *os.File, c chan InputEvent) {
-	tmp := make([]byte, eventSize)
-	event := InputEvent{}
-	for {
-		n, err := fd.Read(tmp)
-		if err != nil {
-			close(c)
-			fd.Close()
-			panic(err) // don't think this is right here
-		}
-		if n <= 0 {
-			continue
-		}
-
-		if err := binary.Read(bytes.NewBuffer(tmp), binary.LittleEndian, &event); err != nil {
-			panic(err) // again, not right
-		}
-
-		c <- event
-	}
+	wg.Wait()
+	cwait <- struct{}{}
 }

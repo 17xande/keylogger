@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 )
@@ -42,17 +46,29 @@ func (ie InputEvent) KeyString() string {
 }
 
 // Read the device file and send InputEvents on a channel.
-func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan error) {
+func (d *InputDevice) Read(ctx context.Context, wg *sync.WaitGroup, cie chan InputEvent, cer chan error) {
 	var err error
 
 	defer func() {
-		d.File.Close()
+		err := d.File.Close()
+		if errors.Is(err, fs.ErrClosed) {
+			// File already closed, safe to ignore.
+			return
+		}
+		if err != nil {
+			cer <- fmt.Errorf("failed to close device file while breaking out of Read loop: %w", err)
+		}
+
+		wg.Done()
 	}()
 
-	// TODO: Check if file exists first?
 	d.File, err = os.Open(fmt.Sprintf(deviceFile, d.ID))
+	if errors.Is(err, fs.ErrNotExist) {
+		cer <- fmt.Errorf("failed to open device file, it does not exist")
+		return
+	}
 	if err != nil {
-		cer <- err
+		cer <- fmt.Errorf("failed to open device file for reading: %w", err)
 		return
 	}
 
@@ -60,29 +76,32 @@ func (d *InputDevice) Read(ctx context.Context, cie chan InputEvent, cer chan er
 	e := InputEvent{}
 
 	for {
-		n, err := d.File.Read(b)
-		// Check if the goroutine needs to be cancelled.
 		select {
+		// Check if the goroutine needs to be cancelled.
 		case <-ctx.Done():
 			return
+
 		default:
-		}
+			n, err := d.File.Read(b)
+			if n == 0 || errors.Is(err, io.EOF) {
+				cer <- fmt.Errorf("end of device file")
+				return
+			}
+			if errors.Is(err, fs.ErrNotExist) {
+				cer <- fmt.Errorf("failed to read device file because it doesn't exist")
+				return
+			}
+			if err != nil {
+				cer <- fmt.Errorf("failed to read device file: %w", err)
+				return
+			}
 
-		if err != nil {
-			cer <- err
-			return
+			if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
+				cer <- fmt.Errorf("failed reading binary in device file: %w", err)
+				return
+			}
+			cie <- e
 		}
-
-		if n <= 0 {
-			continue
-		}
-
-		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &e); err != nil {
-			cer <- err
-			return
-		}
-
-		cie <- e
 	}
 }
 
